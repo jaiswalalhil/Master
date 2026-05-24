@@ -254,6 +254,27 @@ bot.command('generate', async (ctx) => {
 });
 
 // ==========================================
+// TEST WORKER COMMAND (DEBUG)
+// ==========================================
+bot.command('testworker', async (ctx) => {
+    await ctx.reply("⏳ Checking worker...");
+    
+    try {
+        const response = await axios.post(WORKER_URL, {
+            action: "chat",
+            message: "Hello"
+        }, {
+            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+            timeout: 30000
+        });
+        
+        await ctx.reply(`✅ Worker response: ${response.data.response?.substring(0, 100) || 'No response'}`);
+    } catch (error) {
+        await ctx.reply(`❌ Worker error: ${error.message}`);
+    }
+});
+
+// ==========================================
 // SECRET WORD - ADMIN PANEL (Secure)
 // ==========================================
 bot.hears(ADMIN_SECRET, async (ctx) => {
