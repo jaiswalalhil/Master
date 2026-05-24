@@ -1,6 +1,7 @@
 // ╔══════════════════════════════════════════════════════════════╗
 // ║  NEXUS AI TELEGRAM BOT - FINAL COMPLETE                      ║
 // ║  Fixed Image Gen | Secure Admin | Full Features              ║
+// ║  Token: New | Admin Secret: KaaliNexus@2026                  ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 const { Telegraf, Markup } = require('telegraf');
@@ -8,14 +9,14 @@ const axios = require('axios');
 const FormData = require('form-data');
 
 // ==========================================
-// CONFIGURATION (Update these values)
+// CONFIGURATION (UPDATED)
 // ==========================================
 const BOT_TOKEN = "8888091040:AAFFgKqJS8iZJY9R4jYdKmgbgxSY7QTj79I";
 const WORKER_URL = "https://nexus-a1.apikeyakhilka.workers.dev/api";
 const API_KEY = "akhil-123";
-const ADMIN_SECRET = "N3xus@2026#Admin";
+const ADMIN_SECRET = "KaaliNexus@2026";
 
-// 🔥 APNA NUMERIC ID YAHAN DALO
+// 🔥 APNA NUMERIC ID
 const ADMIN_IDS = new Set([
     8681361916,  // Tumhara Telegram numeric ID
 ]);
