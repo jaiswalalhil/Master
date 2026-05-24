@@ -1,7 +1,0 @@
-{
-  "name": "nexus-bot",
-  "version": "8.0.0",
-  "scripts": {
-    "vercel-build": "pip install -r requirements.txt"
-  }
-}
