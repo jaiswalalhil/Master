@@ -1,7 +1,7 @@
 {
   "name": "nexus-telegram-bot",
   "version": "1.0.0",
-  "description": "NEXUS AI Telegram Bot - Full Features",
+  "description": "NEXUS AI Telegram Bot",
   "main": "netlify/functions/bot.js",
   "dependencies": {
     "telegraf": "^4.15.3",
