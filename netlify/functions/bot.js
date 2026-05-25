@@ -129,8 +129,7 @@ bot.start(async (ctx) => {
         "• `/generate sunset` — Auto (Flux)\n" +
         "• `/generate --realistic mountain` — Realistic (SDXL)\n" +
         "• `/generate --artistic dream` — Artistic (DreamShaper)\n" +
-        "• `/photo Taj Mahal` — Real photos\n\n"
-        `💡 Send *${ADMIN_SECRET}* for admin panel...`,
+        "• `/photo Taj Mahal` — Real photos\n\n",
         mainKeyboard
     );
 });
@@ -151,7 +150,7 @@ bot.help(async (ctx) => {
         "• `/generate --artistic dream` → Artistic (DreamShaper)\n" +
         "• `/generate --fast dog` → Fast (Flux Schnell)\n\n" +
         "**📸 Photo Search:**\n" +
-        "• `/photo Taj Mahal` → Real photos (Unsplash+Pixabay)\n" +
+        "• `/photo Taj Mahal` → Real photos\n" +
         "• `/vary more color` → Edit image (reply to photo)\n" +
         "• `/enhance` → Improve quality (reply to photo)\n\n" +
         "**🆔 Utility:**\n" +
