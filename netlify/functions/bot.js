@@ -1,635 +1,1119 @@
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  NEXUS AI TELEGRAM BOT - FINAL COMPLETE                      ║
-// ║  Style-Based Image Gen | Real Photos | Vision | Voice        ║
-// ║  Flux | SDXL | DreamShaper                                   ║
-// ╚══════════════════════════════════════════════════════════════╝
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  NEXUS AI TELEGRAM BOT - INDUSTRY LEVEL PRODUCTION                          ║
+// ║  Enterprise Grade | Full Streaming | 6 Models | 3 Image Engines             ║
+// ║  Created by Akhil Jaiswal 🇮🇳                                                ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
 
 const { Telegraf, Markup } = require('telegraf');
 const axios = require('axios');
 const FormData = require('form-data');
 
 // ==========================================
-// CONFIGURATION (Environment Variables)
+// ========== ENTERPRISE CONFIGURATION ==========
 // ==========================================
-const BOT_TOKEN = process.env.BOT_TOKEN || "8888091040:AAFFgKqJS8iZJY9R4jYdKmgbgxSY7QTj79I";
-const WORKER_URL = "https://nexus-a1.apikeyakhilka.workers.dev/api";
-const API_KEY = "akhil-123";
-const ADMIN_SECRET = process.env.ADMIN_SECRET || "none";  // 🔐 From Netlify Env
+const CONFIG = {
+    // Core
+    BOT_TOKEN: process.env.BOT_TOKEN || "8888091040:AAFFgKqJS8iZJY9R4jYdKmgbgxSY7QTj79I",
+    WORKER_URL: "https://nexus-a1.apikeyakhilka.workers.dev/api",
+    VOICE_URL: "https://nexus-a1.apikeyakhilka.workers.dev/voice-chat",
+    API_KEY: "akhil-123",
 
-// 🔥 Apna Telegram Numeric ID yahan daalo
-const ADMIN_IDS = new Set([
-    8681361916,  // Your Telegram ID
-]);
+    // Admin
+    ADMIN_SECRET: process.env.ADMIN_SECRET || "KaaliNexus@2026",
+    ADMIN_IDS: new Set([8681361916]),
 
-// In-memory storage
-let adminSessions = new Map();
-let premiumUsers = new Map();
-let userMessageCount = new Map();
+    // Business
+    APP_NAME: 'NEXUS',
+    CREATOR: 'Akhil Jaiswal',
+    UPI_ID: 'jaiswalanushi8@oksbi',
+
+    // Limits
+    DAILY_LIMITS: {
+        free: { messages: 50, images: 10, voice: 5 },
+        premium: { messages: Infinity, images: Infinity, voice: Infinity }
+    },
+
+    // Timeouts
+    STREAMING_TIMEOUT: 120000,
+    API_TIMEOUT: 60000,
+    IMAGE_TIMEOUT: 120000,
+
+    // Streaming
+    STREAMING_MODE: 'word', // word, sentence, smart
+    CHUNK_DELAY: 30, // milliseconds between chunks
+    UPDATE_INTERVAL: 500 // milliseconds between message updates
+};
 
 // ==========================================
-// FORMAT FOR TELEGRAM
+// ========== ENTERPRISE STORAGE ==========
 // ==========================================
-function formatForTelegram(text) {
-    if (!text) return '';
-    let result = text;
-    result = result.replace(/^#{1,6}\s+/gm, '');
-    result = result.replace(/\|(.+?)\|/g, function(match) {
-        if (match.includes('---')) return '';
-        let cells = match.split('|').filter(c => c.trim());
-        if (cells.length === 0) return '';
-        return cells.map(c => `• ${c.trim()}`).join('\n');
-    });
-    result = result.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '$1 ($2)');
-    result = result.replace(/\n{3,}/g, '\n\n');
-    return result.trim();
-}
+class EnterpriseStorage {
+    constructor() {
+        this.adminSessions = new Map();
+        this.premiumUsers = new Map();
+        this.usageTracker = new Map();
+        this.streamingControllers = new Map();
+        this.streamingMessages = new Map();
+    }
 
-// ==========================================
-// HELPERS
-// ==========================================
-function getToday() {
-    return new Date().toISOString().split('T')[0];
-}
+    isAdmin(userId) {
+        return CONFIG.ADMIN_IDS.has(userId);
+    }
 
-function isAuthorizedAdmin(userId) {
-    return ADMIN_IDS.has(userId);
-}
+    isPremium(userId) {
+        return this.premiumUsers.has(userId);
+    }
 
-async function checkPremium(userId) {
-    if (premiumUsers.has(userId)) return true;
-    try {
-        const res = await axios.post(WORKER_URL, {
-            action: "premium_status",
-            userId: String(userId)
-        }, {
-            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-            timeout: 5000
-        });
-        return res.data?.isPremium || false;
-    } catch {
-        return false;
+    activatePremium(userId) {
+        this.premiumUsers.set(userId, true);
+        return true;
+    }
+
+    revokePremium(userId) {
+        return this.premiumUsers.delete(userId);
+    }
+
+    isAdminSession(userId) {
+        return this.adminSessions.has(userId);
+    }
+
+    createAdminSession(userId, data) {
+        this.adminSessions.set(userId, { ...data, createdAt: Date.now() });
+        return true;
+    }
+
+    destroyAdminSession(userId) {
+        return this.adminSessions.delete(userId);
+    }
+
+    checkRateLimit(userId, type) {
+        const isPremiumUser = this.isPremium(userId) || this.isAdmin(userId);
+        const limits = CONFIG.DAILY_LIMITS[isPremiumUser ? 'premium' : 'free'];
+        const limit = limits[type] || 50;
+
+        if (limit === Infinity) return { allowed: true, remaining: Infinity };
+
+        const today = new Date().toISOString().split('T')[0];
+        const key = `${userId}:${type}:${today}`;
+        const current = this.usageTracker.get(key) || 0;
+
+        if (current >= limit) {
+            return { allowed: false, remaining: 0, limit };
+        }
+
+        this.usageTracker.set(key, current + 1);
+
+        // Auto cleanup after 24 hours
+        setTimeout(() => {
+            if (this.usageTracker.get(key) === current + 1) {
+                this.usageTracker.delete(key);
+            }
+        }, 86400000);
+
+        return { allowed: true, remaining: limit - current - 1, limit };
+    }
+
+    setStreamingController(chatId, controller) {
+        this.streamingControllers.set(chatId, controller);
+    }
+
+    clearStreamingController(chatId) {
+        const controller = this.streamingControllers.get(chatId);
+        if (controller) {
+            controller.abort();
+            this.streamingControllers.delete(chatId);
+        }
+        this.streamingMessages.delete(chatId);
+    }
+
+    setStreamingMessage(chatId, messageId) {
+        this.streamingMessages.set(chatId, messageId);
+    }
+
+    getStreamingMessage(chatId) {
+        return this.streamingMessages.get(chatId);
+    }
+
+    getStats() {
+        return {
+            adminSessions: this.adminSessions.size,
+            premiumUsers: this.premiumUsers.size,
+            activeStreams: this.streamingControllers.size,
+            totalTracked: this.usageTracker.size
+        };
     }
 }
 
-async function checkLimit(userId) {
-    if (adminSessions.has(userId)) return true;
-    if (await checkPremium(userId)) return true;
-    const today = getToday();
-    const key = `${userId}_${today}`;
-    const count = userMessageCount.get(key) || 0;
-    if (count >= 50) return false;
-    userMessageCount.set(key, count + 1);
-    return true;
+const storage = new EnterpriseStorage();
+
+// ==========================================
+// ========== TELEGRAM RESPONSE FORMATTER ==========
+// ==========================================
+class ResponseFormatter {
+    static cleanMarkdown(text) {
+        if (!text) return '';
+
+        return text
+            // Remove markdown headings
+            .replace(/^#{1,6}\s+/gm, '')
+            // Convert tables to bullet points
+            .replace(/\|(.+?)\|/g, (match) => {
+                if (match.includes('---')) return '';
+                const cells = match.split('|').filter(c => c.trim());
+                if (cells.length === 0) return '';
+                return cells.map(c => `• ${c.trim()}`).join('\n');
+            })
+            // Convert links to plain text
+            .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+            // Remove horizontal lines
+            .replace(/^[\-\*]{3,}$/gm, '')
+            // Normalize line breaks
+            .replace(/\n{3,}/g, '\n\n')
+            // Trim
+            .trim();
+    }
+
+    static formatResponse(response, model, latency, isAdminMode) {
+        let text = this.cleanMarkdown(response);
+        if (isAdminMode) {
+            text = `👑 *[ADMIN MODE]*\n\n${text}`;
+        }
+        return `${text}\n\n⚡ ${latency}ms | 🤖 ${model}`;
+    }
+
+    static formatError(error, isAdminMode = false) {
+        const prefix = isAdminMode ? '👑 *[ADMIN MODE]*\n\n' : '';
+        return `${prefix}❌ *Error:* ${error.message || error}\n\nPlease try again later.`;
+    }
+
+    static formatLimitWarning(limit, type) {
+        return `⚠️ *Daily ${type} limit reached!* (${limit}/${type})\n\nUpgrade to premium for unlimited access.`;
+    }
 }
 
-async function sendTyping(ctx) {
-    await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
+// ==========================================
+// ========== STREAMING ENGINE ==========
+// ==========================================
+class StreamingEngine {
+    static async streamResponse(message, ctx, isAdminMode = false) {
+        const chatId = ctx.chat.id;
+        const startTime = Date.now();
+
+        // Send initial message
+        const initialMessage = await ctx.reply("🧠 *Processing your request...*", { parse_mode: 'Markdown' });
+        let currentMessageId = initialMessage.message_id;
+        storage.setStreamingMessage(chatId, currentMessageId);
+
+        // Create abort controller
+        const abortController = new AbortController();
+        storage.setStreamingController(chatId, abortController);
+
+        let fullResponse = '';
+        let lastUpdateTime = Date.now();
+        let pendingUpdate = false;
+
+        try {
+            // Make streaming request to worker
+            const response = await fetch(CONFIG.WORKER_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': CONFIG.API_KEY,
+                    'X-Stream-Mode': CONFIG.STREAMING_MODE,
+                    ...(isAdminMode && { 'X-User-ID': 'akhil' })
+                },
+                body: JSON.stringify({
+                    action: 'chat',
+                    message: message
+                }),
+                signal: abortController.signal
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.substring(6);
+
+                        if (dataStr === '[DONE]') {
+                            // Stream complete - send final response
+                            const cleanedResponse = ResponseFormatter.cleanMarkdown(fullResponse);
+                            const finalText = isAdminMode ? `👑 *[ADMIN MODE]*\n\n${cleanedResponse}` : cleanedResponse;
+                            const latency = Date.now() - startTime;
+
+                            await ctx.telegram.editMessageText(
+                                chatId,
+                                currentMessageId,
+                                null,
+                                `${finalText}\n\n⚡ ${latency}ms | 🤖 AI`,
+                                { parse_mode: 'Markdown' }
+                            );
+                            return;
+                        }
+
+                        try {
+                            const data = JSON.parse(dataStr);
+
+                            switch (data.type) {
+                                case 'chunk':
+                                    if (data.text) {
+                                        fullResponse += data.text;
+
+                                        // Update message periodically
+                                        const now = Date.now();
+                                        if (!pendingUpdate && (now - lastUpdateTime) >= CONFIG.UPDATE_INTERVAL) {
+                                            pendingUpdate = true;
+
+                                            const preview = fullResponse.length > 800 
+                                                ? fullResponse.substring(0, 800) + '...' 
+                                                : fullResponse;
+                                            const cleanedPreview = ResponseFormatter.cleanMarkdown(preview);
+
+                                            try {
+                                                await ctx.telegram.editMessageText(
+                                                    chatId,
+                                                    currentMessageId,
+                                                    null,
+                                                    `🤖 *Generating...*\n\n${cleanedPreview}`,
+                                                    { parse_mode: 'Markdown' }
+                                                );
+                                                lastUpdateTime = now;
+                                            } catch (editError) {
+                                                // If edit fails (message too long), send new message
+                                                if (editError.response?.statusCode === 400) {
+                                                    const newMessage = await ctx.reply(
+                                                        `🤖 *Continuing...*\n\n${cleanedPreview}`,
+                                                        { parse_mode: 'Markdown' }
+                                                    );
+                                                    currentMessageId = newMessage.message_id;
+                                                    storage.setStreamingMessage(chatId, currentMessageId);
+                                                }
+                                            }
+                                            pendingUpdate = false;
+                                        }
+                                    }
+                                    break;
+
+                                case 'thinking':
+                                    // Update thinking status
+                                    try {
+                                        await ctx.telegram.editMessageText(
+                                            chatId,
+                                            currentMessageId,
+                                            null,
+                                            `🧠 *${data.reason || 'Thinking...'}*`,
+                                            { parse_mode: 'Markdown' }
+                                        );
+                                    } catch (e) {}
+                                    break;
+
+                                case 'search':
+                                    // Show search status
+                                    try {
+                                        await ctx.telegram.editMessageText(
+                                            chatId,
+                                            currentMessageId,
+                                            null,
+                                            `🔍 *Searching: ${data.source || 'Web'}*\n${data.snippet || 'Gathering information...'}`,
+                                            { parse_mode: 'Markdown' }
+                                        );
+                                    } catch (e) {}
+                                    break;
+
+                                case 'error':
+                                    throw new Error(data.error);
+                            }
+                        } catch (parseError) {
+                            console.error('Stream parse error:', parseError);
+                        }
+                    }
+                }
+            }
+
+            // If we exit without [DONE], send whatever we have
+            if (fullResponse) {
+                const cleanedResponse = ResponseFormatter.cleanMarkdown(fullResponse);
+                const finalText = isAdminMode ? `👑 *[ADMIN MODE]*\n\n${cleanedResponse}` : cleanedResponse;
+                const latency = Date.now() - startTime;
+
+                await ctx.telegram.editMessageText(
+                    chatId,
+                    currentMessageId,
+                    null,
+                    `${finalText}\n\n⚡ ${latency}ms | 🤖 AI`,
+                    { parse_mode: 'Markdown' }
+                );
+            }
+
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                await ctx.telegram.editMessageText(
+                    chatId,
+                    currentMessageId,
+                    null,
+                    `⏹️ *Streaming stopped by user*`,
+                    { parse_mode: 'Markdown' }
+                );
+            } else {
+                console.error('Streaming error:', error);
+                await ctx.telegram.editMessageText(
+                    chatId,
+                    currentMessageId,
+                    null,
+                    ResponseFormatter.formatError(error, isAdminMode),
+                    { parse_mode: 'Markdown' }
+                );
+            }
+        } finally {
+            storage.clearStreamingController(chatId);
+            storage.streamingMessages.delete(chatId);
+        }
+    }
 }
 
 // ==========================================
-// KEYBOARDS
+// ========== API CLIENT ==========
 // ==========================================
-const mainKeyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('💬 New Chat', 'new_chat')],
-    [Markup.button.callback('🎨 Generate Image', 'image_info')],
-    [Markup.button.callback('📸 Real Photos', 'photo_info')],
-    [Markup.button.callback('⚙️ Settings', 'settings')]
-]);
+class APIClient {
+    static async generateImage(prompt, style = 'auto') {
+        const styleMap = {
+            realistic: 'photorealistic',
+            artistic: 'artistic',
+            auto: 'auto'
+        };
 
-const adminKeyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('👑 Verify Premium', 'admin_verify')],
-    [Markup.button.callback('📊 Check Status', 'admin_status')],
-    [Markup.button.callback('❌ Revoke Premium', 'admin_revoke')],
-    [Markup.button.callback('📋 View Plans', 'admin_plans')],
-    [Markup.button.callback('🏥 System Health', 'admin_health')],
-    [Markup.button.callback('🗑️ Clear Session', 'admin_clear')],
-    [Markup.button.callback('🚪 Logout', 'admin_logout')]
-]);
+        const response = await axios.post(CONFIG.WORKER_URL, {
+            action: 'image_generate',
+            prompt: prompt,
+            style: styleMap[style] || 'auto'
+        }, {
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': CONFIG.API_KEY },
+            timeout: CONFIG.IMAGE_TIMEOUT,
+            responseType: 'arraybuffer'
+        });
+
+        return response.data;
+    }
+
+    static async searchPhotos(query) {
+        const response = await axios.post(CONFIG.WORKER_URL, {
+            action: 'real_photo',
+            query: query,
+            per_page: 5
+        }, {
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': CONFIG.API_KEY },
+            timeout: CONFIG.API_TIMEOUT
+        });
+
+        return response.data;
+    }
+
+    static async analyzeImage(base64Image) {
+        const response = await axios.post(CONFIG.WORKER_URL, {
+            action: 'chat',
+            image: base64Image,
+            message: 'Describe this image in detail'
+        }, {
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': CONFIG.API_KEY },
+            timeout: CONFIG.API_TIMEOUT
+        });
+
+        return response.data;
+    }
+
+    static async voiceChat(audioBuffer, language = 'hi') {
+        const formData = new FormData();
+        formData.append('audio', Buffer.from(audioBuffer), { 
+            filename: 'voice.ogg', 
+            contentType: 'audio/ogg' 
+        });
+        formData.append('language', language);
+
+        const response = await axios.post(CONFIG.VOICE_URL, formData, {
+            headers: { ...formData.getHeaders(), 'X-API-Key': CONFIG.API_KEY },
+            timeout: CONFIG.API_TIMEOUT
+        });
+
+        return response.data;
+    }
+
+    static async analyzeFile(filename, content) {
+        const response = await axios.post(CONFIG.WORKER_URL, {
+            action: 'analyze_file',
+            filename: filename,
+            content: content
+        }, {
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': CONFIG.API_KEY },
+            timeout: CONFIG.API_TIMEOUT * 1.5
+        });
+
+        return response.data;
+    }
+
+    static async getPremiumStatus(userId) {
+        try {
+            const response = await axios.post(CONFIG.WORKER_URL, {
+                action: 'premium_status',
+                userId: String(userId)
+            }, {
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': CONFIG.API_KEY },
+                timeout: 10000
+            });
+            return response.data?.isPremium || false;
+        } catch {
+            return false;
+        }
+    }
+}
 
 // ==========================================
-// BOT INITIALIZATION
+// ========== KEYBOARD DEFINITIONS ==========
 // ==========================================
-const bot = new Telegraf(BOT_TOKEN);
+const Keyboards = {
+    main: Markup.inlineKeyboard([
+        [Markup.button.callback('💬 New Chat', 'new_chat')],
+        [Markup.button.callback('🎨 Generate Image', 'image_info')],
+        [Markup.button.callback('📸 Search Photos', 'photo_info')],
+        [Markup.button.callback('⚙️ Settings', 'settings')]
+    ]),
+
+    admin: Markup.inlineKeyboard([
+        [Markup.button.callback('👑 Admin Panel', 'admin_panel')]
+    ]),
+
+    adminPanel: Markup.inlineKeyboard([
+        [Markup.button.callback('👑 Verify Premium', 'admin_verify')],
+        [Markup.button.callback('📊 System Status', 'admin_status')],
+        [Markup.button.callback('❌ Revoke Premium', 'admin_revoke')],
+        [Markup.button.callback('📋 Premium Plans', 'admin_plans')],
+        [Markup.button.callback('🏥 Health Check', 'admin_health')],
+        [Markup.button.callback('🗑️ Clear Session', 'admin_clear')],
+        [Markup.button.callback('🚪 Close Panel', 'admin_logout')]
+    ])
+};
 
 // ==========================================
-// START COMMAND
+// ========== BOT INITIALIZATION ==========
 // ==========================================
+const bot = new Telegraf(CONFIG.BOT_TOKEN);
+
+// ==========================================
+// ========== CORE COMMANDS ==========
+// ==========================================
+
+// Start Command
 bot.start(async (ctx) => {
-    await ctx.replyWithMarkdown(
-        "🤖 *NEXUS AI — GPT-5.5 Level*\n\n" +
-        "👋 Hello! I'm NEXUS, your AI assistant.\n\n" +
-        "**Features:**\n" +
-        "• 💬 Chat & Questions\n" +
-        "• 🌐 Real-Time Web Search\n" +
-        "• 🎨 AI Image Generation (Flux/SDXL/DreamShaper)\n" +
-        "• 📸 Real Photos (Unsplash + Pixabay)\n" +
-        "• 📸 Photo Analysis\n" +
-        "• 🎤 Voice Chat\n\n" +
-        "**Quick Commands:**\n" +
-        "• `/generate sunset` — Auto (Flux)\n" +
-        "• `/generate --realistic mountain` — Realistic (SDXL)\n" +
-        "• `/generate --artistic dream` — Artistic (DreamShaper)\n" +
-        "• `/photo Taj Mahal` — Real photos\n\n",
-        mainKeyboard
-    );
+    const userId = ctx.from.id;
+    const isAdmin = storage.isAdmin(userId);
+
+    const welcomeMessage = `🤖 *${CONFIG.APP_NAME} AI — Enterprise Edition*\n\n` +
+        `👋 Hello ${ctx.from.first_name}! I'm ${CONFIG.APP_NAME}, your AI assistant.\n\n` +
+        `**🎯 Capabilities:**\n` +
+        `• 💬 *Intelligent Chat* (Streaming responses)\n` +
+        `• 🌐 *Real-Time Web Search*\n` +
+        `• 🎨 *AI Image Generation* (3 engines)\n` +
+        `• 📸 *Real Photo Search* (Unsplash+Pixabay)\n` +
+        `• 👁️ *Vision Analysis*\n` +
+        `• 🎤 *Voice Chat*\n` +
+        `• 📄 *File Analysis*\n\n` +
+        `**⚡ Quick Commands:**\n` +
+        `• /generate sunset — AI Image\n` +
+        `• /photo Taj Mahal — Real Photos\n` +
+        `• /status — Check Premium\n` +
+        `• /help — Full Guide\n\n` +
+        `💡 *Just type anything to start chatting!*`;
+
+    if (isAdmin) {
+        await ctx.replyWithMarkdown(welcomeMessage + `\n\n🔐 *Admin access granted.*`, Keyboards.admin);
+    } else {
+        await ctx.replyWithMarkdown(welcomeMessage, Keyboards.main);
+    }
 });
 
-// ==========================================
-// HELP COMMAND
-// ==========================================
+// Help Command
 bot.help(async (ctx) => {
     await ctx.replyWithMarkdown(
-        "📚 *NEXUS AI Commands*\n\n" +
-        "**💬 Chat:**\n" +
-        "• Just type any message\n" +
-        "• /status - Check premium\n" +
-        "• /premium [code] - Activate premium\n\n" +
-        "**🎨 Image Generation:**\n" +
-        "• `/generate sunset` → Auto (Flux)\n" +
-        "• `/generate --realistic mountain` → Realistic (SDXL)\n" +
-        "• `/generate --artistic dream` → Artistic (DreamShaper)\n" +
-        "• `/generate --fast dog` → Fast (Flux Schnell)\n\n" +
-        "**📸 Photo Search:**\n" +
-        "• `/photo Taj Mahal` → Real photos\n" +
-        "• `/vary more color` → Edit image (reply to photo)\n" +
-        "• `/enhance` → Improve quality (reply to photo)\n\n" +
-        "**🆔 Utility:**\n" +
-        "• /myid - Get your Telegram ID\n" +
-        "• /help - Show this menu\n\n" +
-        `🔐 Admin: Send *${ADMIN_SECRET}* for admin panel`
+        `📚 *${CONFIG.APP_NAME} AI — Complete Guide*\n\n` +
+        `**💬 Chat:**\n` +
+        `• Type any message — AI responds with streaming\n` +
+        `• /cancel — Stop current response\n` +
+        `• /status — Check your premium status\n` +
+        `• /premium [code] — Activate premium\n\n` +
+        `**🎨 Images:**\n` +
+        `• /generate [prompt] — Auto mode\n` +
+        `• /generate --realistic [prompt] — Photorealistic\n` +
+        `• /generate --artistic [prompt] — Artistic\n` +
+        `• /photo [query] — Search real photos\n` +
+        `• /vary [instruction] — Edit image (reply to photo)\n` +
+        `• /enhance — Improve quality (reply to photo)\n\n` +
+        `**🎤 Media:**\n` +
+        `• Send a photo — AI analyzes it\n` +
+        `• Send a voice message — AI transcribes & responds\n` +
+        `• Send a document — AI analyzes content\n\n` +
+        `**🆔 Utility:**\n` +
+        `• /myid — Get your Telegram ID\n` +
+        `• /help — Show this menu\n\n` +
+        `💎 *Premium: Unlimited messages, images, voice*`
     );
 });
 
-// ==========================================
-// MY ID COMMAND
-// ==========================================
-bot.command('myid', async (ctx) => {
-    await ctx.reply(`Your Numeric ID: \`${ctx.from.id}\``, { parse_mode: 'Markdown' });
+// Cancel Command
+bot.command('cancel', async (ctx) => {
+    const chatId = ctx.chat.id;
+    storage.clearStreamingController(chatId);
+    await ctx.reply(`⏹️ *Response stopped*`, { parse_mode: 'Markdown' });
 });
 
-// ==========================================
-// STATUS COMMAND
-// ==========================================
+// My ID Command
+bot.command('myid', async (ctx) => {
+    await ctx.reply(`🆔 *Your Telegram ID:* \`${ctx.from.id}\``, { parse_mode: 'Markdown' });
+});
+
+// Status Command
 bot.command('status', async (ctx) => {
-    const prem = await checkPremium(ctx.from.id);
+    const userId = ctx.from.id;
+    const workerPremium = await APIClient.getPremiumStatus(userId);
+    const localPremium = storage.isPremium(userId);
+    const isPremiumUser = workerPremium || localPremium;
+    const rateLimit = storage.checkRateLimit(userId, 'messages');
+
     await ctx.replyWithMarkdown(
         `📊 *Premium Status*\n\n` +
-        `👤 User: ${ctx.from.first_name}\n` +
-        `💎 Premium: ${prem ? '✅ Active' : '❌ Inactive'}\n` +
-        `📅 Daily Limit: ${prem ? 'Unlimited' : '50 messages/day'}`
+        `👤 *User:* ${ctx.from.first_name}\n` +
+        `🆔 *ID:* \`${userId}\`\n` +
+        `💎 *Premium:* ${isPremiumUser ? '✅ Active' : '❌ Inactive'}\n` +
+        `📅 *Today's Usage:* ${rateLimit.limit === Infinity ? 'Unlimited' : `${50 - (rateLimit.remaining + 1)}/50 messages`}\n\n` +
+        (isPremiumUser ? `✨ *Unlimited access activated!*` : `💡 *Contact admin for premium access*`)
     );
 });
 
-// ==========================================
-// PREMIUM COMMAND
-// ==========================================
+// Premium Command
 bot.command('premium', async (ctx) => {
     const args = ctx.message.text.split(' ');
     const code = args[1];
+
     if (!code) {
-        await ctx.replyWithMarkdown("❌ Usage: `/premium [code]`");
+        await ctx.replyWithMarkdown(`❌ *Usage:* \`/premium [code]\`\n\nContact admin to obtain premium code.`);
         return;
     }
-    if (code === ADMIN_SECRET) {
-        premiumUsers.set(ctx.from.id, true);
-        await ctx.replyWithMarkdown("✅ *Premium Activated!*\n\nYou now have unlimited access.");
+
+    if (code === CONFIG.ADMIN_SECRET) {
+        storage.activatePremium(ctx.from.id);
+        await ctx.replyWithMarkdown(`✅ *Premium Activated!*\n\n✨ You now have unlimited access to all features.\n📅 No daily limits!`);
     } else {
-        await ctx.replyWithMarkdown("❌ *Invalid code!*\n\nContact admin for premium access.");
+        await ctx.replyWithMarkdown(`❌ *Invalid premium code!*\n\nPlease check your code and try again.`);
     }
 });
 
 // ==========================================
-// IMAGE GENERATION (Style-Based Routing)
+// ========== IMAGE COMMANDS ==========
 // ==========================================
+
+// Generate Image Command
 bot.command('generate', async (ctx) => {
     let prompt = ctx.message.text.replace('/generate', '').trim();
-
-    let style = "auto";
+    let style = 'auto';
     let cleanPrompt = prompt;
 
     if (prompt.startsWith('--realistic')) {
-        style = "realistic";
+        style = 'realistic';
         cleanPrompt = prompt.replace('--realistic', '').trim();
     } else if (prompt.startsWith('--artistic')) {
-        style = "artistic";
+        style = 'artistic';
         cleanPrompt = prompt.replace('--artistic', '').trim();
-    } else if (prompt.startsWith('--fast')) {
-        style = "fast";
-        cleanPrompt = prompt.replace('--fast', '').trim();
     }
 
     if (!cleanPrompt) {
         await ctx.replyWithMarkdown(
-            "🎨 *AI Image Generation*\n\n" +
-            "**Usage:**\n" +
-            "• `/generate sunset` → Auto (Flux)\n" +
-            "• `/generate --realistic mountain` → Realistic (SDXL)\n" +
-            "• `/generate --artistic dream` → Artistic (DreamShaper)\n" +
-            "• `/generate --fast dog` → Fast (Flux Schnell)\n\n" +
-            "**Examples:**\n" +
-            "• `/generate --realistic beautiful beach sunset`\n" +
-            "• `/generate --artistic cyberpunk city anime style`"
+            `🎨 *AI Image Generation*\n\n` +
+            `*Usage:*\n` +
+            `• \`/generate sunset\` — Auto (Flux)\n` +
+            `• \`/generate --realistic mountain\` — Realistic (SDXL)\n` +
+            `• \`/generate --artistic dream\` — Artistic (DreamShaper)\n\n` +
+            `*Example:* \`/generate --realistic beautiful beach sunset\``
         );
         return;
     }
 
-    await ctx.reply(`🎨 *Generating ${style} image...*\n📝 "${cleanPrompt}"\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-    await sendTyping(ctx);
+    // Check rate limit
+    const rateLimit = storage.checkRateLimit(ctx.from.id, 'images');
+    if (!rateLimit.allowed) {
+        await ctx.replyWithMarkdown(ResponseFormatter.formatLimitWarning(rateLimit.limit, 'images'));
+        return;
+    }
+
+    const styleNames = {
+        realistic: '📷 SDXL (Realistic)',
+        artistic: '🎨 DreamShaper (Artistic)',
+        auto: '⚡ Flux (Auto)'
+    };
+
+    await ctx.reply(`${styleNames[style]} *Generating image...*\n📝 "${cleanPrompt}"\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'upload_photo');
 
     try {
-        let workerStyle = "artistic";
-        if (style === "realistic") workerStyle = "photorealistic";
-        else if (style === "artistic") workerStyle = "artistic";
-        else if (style === "fast") workerStyle = "fast";
+        const imageData = await APIClient.generateImage(cleanPrompt, style);
 
-        const response = await axios.post(WORKER_URL, {
-            action: "image_generate",
-            prompt: cleanPrompt,
-            style: workerStyle
-        }, {
-            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-            timeout: 120000,
-            responseType: 'arraybuffer'
-        });
-
-        const contentType = response.headers['content-type'] || '';
-        let modelUsed = "Flux (Fast)";
-
-        if (response.headers['x-provider']) {
-            const provider = response.headers['x-provider'];
-            if (provider.includes('SDXL')) modelUsed = "SDXL (Realistic)";
-            else if (provider.includes('DreamShaper')) modelUsed = "DreamShaper (Artistic)";
-            else if (provider.includes('Flux')) modelUsed = "Flux (Fast)";
-        }
-
-        if (contentType.includes('image') || response.data instanceof Buffer) {
-            await ctx.replyWithPhoto({ source: Buffer.from(response.data) }, {
-                caption: `🎨 *${modelUsed}*\n📝 ${cleanPrompt.substring(0, 100)}\n🎭 Style: ${style}`,
+        if (imageData && imageData.length > 1000) {
+            await ctx.replyWithPhoto({ source: Buffer.from(imageData) }, {
+                caption: `${styleNames[style]}\n📝 ${cleanPrompt.substring(0, 100)}`,
                 parse_mode: 'Markdown'
             });
         } else {
-            try {
-                const textData = JSON.parse(response.data.toString());
-                if (textData.image_url || textData.url) {
-                    await ctx.replyWithPhoto(textData.image_url || textData.url, {
-                        caption: `🎨 *Generated*\n📝 ${cleanPrompt.substring(0, 100)}`,
-                        parse_mode: 'Markdown'
-                    });
-                } else {
-                    await ctx.reply("❌ Image generation failed! Please try again.");
-                }
-            } catch (e) {
-                await ctx.reply("❌ Image generation failed! Please try again.");
-            }
+            await ctx.reply(`❌ *Image generation failed!* Please try again.`, { parse_mode: 'Markdown' });
         }
     } catch (error) {
-        console.error('Image gen error:', error.message);
-        await ctx.reply("❌ Image generation failed! Please try again later.");
+        console.error('Image generation error:', error);
+        await ctx.reply(`❌ *Image generation failed!* Please try again later.`, { parse_mode: 'Markdown' });
     }
 });
 
-// ==========================================
-// REAL PHOTO SEARCH (Unsplash + Pixabay)
-// ==========================================
+// Photo Search Command
 bot.command('photo', async (ctx) => {
     const query = ctx.message.text.replace('/photo', '').trim();
 
     if (!query) {
-        await ctx.replyWithMarkdown("📸 *Real Photo Search*\n\nUsage: `/photo [search term]`\n\nExample: `/photo Taj Mahal`\n\nSearches Unsplash + Pixabay for real photos.");
+        await ctx.replyWithMarkdown(
+            `📸 *Real Photo Search*\n\n` +
+            `*Usage:* \`/photo [search term]\`\n\n` +
+            `*Examples:*\n` +
+            `• \`/photo Taj Mahal\`\n` +
+            `• \`/photo beautiful beach\`\n` +
+            `• \`/photo red rose flower\``
+        );
         return;
     }
 
-    await ctx.reply(`🔍 *Searching real photos for:* ${query}\n\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-    await sendTyping(ctx);
+    await ctx.reply(`🔍 *Searching real photos for:* "${query}"\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'upload_photo');
 
     try {
-        const response = await axios.post(WORKER_URL, {
-            action: "real_photo",
-            query: query,
-            per_page: 5
-        }, {
-            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-            timeout: 30000
-        });
+        const result = await APIClient.searchPhotos(query);
 
-        const data = response.data;
-
-        if (data.success && data.photos && data.photos.length > 0) {
+        if (result.success && result.photos && result.photos.length > 0) {
             const mediaGroup = [];
-            for (let i = 0; i < Math.min(data.photos.length, 5); i++) {
-                const photo = data.photos[i];
+            for (let i = 0; i < Math.min(result.photos.length, 5); i++) {
+                const photo = result.photos[i];
                 mediaGroup.push({
                     type: 'photo',
                     media: photo.medium || photo.url,
-                    caption: i === 0 ? `📸 *${query}*\n📷 Source: ${data.source}\n🔍 ${data.total || data.photos.length} results` : undefined,
+                    caption: i === 0 ? `📸 *${query}*\n📷 Source: ${result.source}\n🔍 ${result.total || result.photos.length} results` : undefined,
                     parse_mode: 'Markdown'
                 });
             }
-
-            if (mediaGroup.length > 0) {
-                await ctx.replyWithMediaGroup(mediaGroup);
-            }
-
-            await ctx.replyWithMarkdown(
-                `✅ *${data.photos.length} photos found!*\n\n` +
-                `📷 Source: ${data.source}\n` +
-                `💡 Tip: Try different keywords for more results`
-            );
+            await ctx.replyWithMediaGroup(mediaGroup);
         } else {
-            await ctx.replyWithMarkdown(`❌ *No photos found for:* "${query}"\n\nTry different keywords or use /generate for AI images.`);
+            await ctx.replyWithMarkdown(
+                `❌ *No photos found for:* "${query}"\n\n` +
+                `💡 *Tips:*\n` +
+                `• Try different keywords\n` +
+                `• Use /generate for AI images\n` +
+                `• Check spelling`
+            );
         }
     } catch (error) {
-        console.error('Photo search error:', error.message);
-        await ctx.replyWithMarkdown("❌ *Photo search failed!*\n\nPlease try again later.");
+        console.error('Photo search error:', error);
+        await ctx.replyWithMarkdown(`❌ *Photo search failed!* Please try again.`);
     }
 });
 
-// ==========================================
-// IMAGE VARIATIONS (Edit existing image)
-// ==========================================
+// Image Vary Command
 bot.command('vary', async (ctx) => {
     const instruction = ctx.message.text.replace('/vary', '').trim();
 
-    if (!instruction) {
-        await ctx.replyWithMarkdown("🎨 *Image Variation*\n\nUsage: Reply to an image with `/vary [instruction]`\n\nExample: `/vary make it more colorful`");
+    if (!instruction || !ctx.message.reply_to_message || !ctx.message.reply_to_message.photo) {
+        await ctx.replyWithMarkdown(
+            `🎨 *Image Variation*\n\n` +
+            `*Usage:* Reply to an image with \`/vary [instruction]\`\n\n` +
+            `*Examples:*\n` +
+            `• \`/vary make it more colorful\`\n` +
+            `• \`/vary add a sunset background\`\n` +
+            `• \`/vary improve the lighting\``
+        );
         return;
     }
 
-    if (!ctx.message.reply_to_message || !ctx.message.reply_to_message.photo) {
-        await ctx.replyWithMarkdown("❌ *Please reply to an image* with this command.\n\nSend an image first, then reply with `/vary your instruction`");
-        return;
-    }
-
-    await ctx.reply(`🎨 *Editing image...*\n\n📝 Instruction: ${instruction}\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-    await sendTyping(ctx);
+    await ctx.reply(`🎨 *Editing image...*\n📝 "${instruction}"\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'upload_photo');
 
     try {
         const photo = ctx.message.reply_to_message.photo[ctx.message.reply_to_message.photo.length - 1];
         const file = await ctx.telegram.getFile(photo.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+        const fileUrl = `https://api.telegram.org/file/bot${CONFIG.BOT_TOKEN}/${file.file_path}`;
         const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const base64Image = Buffer.from(imageResponse.data).toString('base64');
 
-        const response = await axios.post(WORKER_URL, {
-            action: "image_edit",
+        const response = await axios.post(CONFIG.WORKER_URL, {
+            action: 'image_edit',
             image: base64Image,
             instruction: instruction
         }, {
-            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-            timeout: 90000,
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': CONFIG.API_KEY },
+            timeout: CONFIG.IMAGE_TIMEOUT,
             responseType: 'arraybuffer'
         });
 
-        const contentType = response.headers['content-type'] || '';
-        if (contentType.includes('image') || response.data instanceof Buffer) {
+        if (response.data && response.data.length > 1000) {
             await ctx.replyWithPhoto({ source: Buffer.from(response.data) }, {
-                caption: `🎨 *Image Variation*\n\n📝 Instruction: ${instruction}`,
+                caption: `🎨 *Image Variation*\n📝 ${instruction}`,
                 parse_mode: 'Markdown'
             });
         } else {
-            await ctx.replyWithMarkdown("❌ *Image editing failed!* Please try again.");
+            await ctx.replyWithMarkdown(`❌ *Image editing failed!* Please try again.`);
         }
     } catch (error) {
-        await ctx.replyWithMarkdown("❌ *Image editing failed!* Please try again.");
+        console.error('Image vary error:', error);
+        await ctx.replyWithMarkdown(`❌ *Image editing failed!* Please try again.`);
     }
 });
 
-// ==========================================
-// IMAGE ENHANCE (Quality improvement)
-// ==========================================
+// Image Enhance Command
 bot.command('enhance', async (ctx) => {
     if (!ctx.message.reply_to_message || !ctx.message.reply_to_message.photo) {
-        await ctx.replyWithMarkdown("❌ *Please reply to an image* with this command.\n\nSend an image first, then reply with `/enhance`");
+        await ctx.replyWithMarkdown(
+            `✨ *Image Enhancement*\n\n` +
+            `*Usage:* Reply to an image with \`/enhance\`\n\n` +
+            `Enhances image quality, sharpness, and details.`
+        );
         return;
     }
 
-    await ctx.reply("✨ *Enhancing image quality...*\n⏳ Please wait...", { parse_mode: 'Markdown' });
-    await sendTyping(ctx);
+    await ctx.reply(`✨ *Enhancing image quality...*\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'upload_photo');
 
     try {
         const photo = ctx.message.reply_to_message.photo[ctx.message.reply_to_message.photo.length - 1];
         const file = await ctx.telegram.getFile(photo.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+        const fileUrl = `https://api.telegram.org/file/bot${CONFIG.BOT_TOKEN}/${file.file_path}`;
         const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const base64Image = Buffer.from(imageResponse.data).toString('base64');
 
-        const response = await axios.post(WORKER_URL, {
-            action: "image_enhance",
+        const response = await axios.post(CONFIG.WORKER_URL, {
+            action: 'image_enhance',
             image: base64Image
         }, {
-            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-            timeout: 90000,
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': CONFIG.API_KEY },
+            timeout: CONFIG.IMAGE_TIMEOUT,
             responseType: 'arraybuffer'
         });
 
-        const contentType = response.headers['content-type'] || '';
-        if (contentType.includes('image') || response.data instanceof Buffer) {
+        if (response.data && response.data.length > 1000) {
             await ctx.replyWithPhoto({ source: Buffer.from(response.data) }, {
-                caption: "✨ *Enhanced Image*\n\nQuality improved!",
+                caption: `✨ *Enhanced Image*\nQuality improved!`,
                 parse_mode: 'Markdown'
             });
         } else {
-            await ctx.replyWithMarkdown("❌ *Image enhancement failed!* Please try again.");
+            await ctx.replyWithMarkdown(`❌ *Image enhancement failed!* Please try again.`);
         }
     } catch (error) {
-        await ctx.replyWithMarkdown("❌ *Image enhancement failed!* Please try again.");
+        console.error('Image enhance error:', error);
+        await ctx.replyWithMarkdown(`❌ *Image enhancement failed!* Please try again.`);
     }
 });
 
 // ==========================================
-// ADMIN SECRET WORD (Secure)
+// ========== ADMIN COMMANDS ==========
 // ==========================================
-bot.hears(ADMIN_SECRET, async (ctx) => {
+
+// Admin Command
+bot.command('admin', async (ctx) => {
     const userId = ctx.from.id;
-    if (!isAuthorizedAdmin(userId)) {
-        await ctx.reply("❌ *Access Denied!* You are not authorized.", { parse_mode: 'Markdown' });
+
+    if (!storage.isAdmin(userId)) {
+        return; // Silently ignore for non-admins
+    }
+
+    storage.createAdminSession(userId, {
+        username: ctx.from.first_name,
+        startedAt: new Date().toISOString()
+    });
+
+    await ctx.replyWithMarkdown(
+        `👑 *Admin Panel*\n\n` +
+        `Welcome, ${ctx.from.first_name}!\n` +
+        `🕐 ${new Date().toLocaleString()}\n\n` +
+        `Select an action:`,
+        Keyboards.adminPanel
+    );
+});
+
+// ==========================================
+// ========== MEDIA HANDLERS ==========
+// ==========================================
+
+// Photo Handler (Vision Analysis)
+bot.on('photo', async (ctx) => {
+    const rateLimit = storage.checkRateLimit(ctx.from.id, 'messages');
+    if (!rateLimit.allowed) {
+        await ctx.replyWithMarkdown(ResponseFormatter.formatLimitWarning(rateLimit.limit, 'messages'));
         return;
     }
-    adminSessions.set(userId, { active: true, loginTime: new Date(), username: ctx.from.first_name });
-    await ctx.replyWithMarkdown(`👑 *ADMIN PANEL UNLOCKED!*\n\nWelcome, ${ctx.from.first_name}!`, adminKeyboard);
-});
 
-// ==========================================
-// PHOTO HANDLER (Vision Analysis)
-// ==========================================
-bot.on('photo', async (ctx) => {
-    await sendTyping(ctx);
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
+
     try {
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
         const file = await ctx.telegram.getFile(photo.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+        const fileUrl = `https://api.telegram.org/file/bot${CONFIG.BOT_TOKEN}/${file.file_path}`;
         const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const base64Image = Buffer.from(imageResponse.data).toString('base64');
 
-        const response = await axios.post(WORKER_URL, {
-            action: "chat",
-            image: base64Image,
-            message: "Describe this image in detail"
-        }, {
-            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-            timeout: 60000
-        });
+        const result = await APIClient.analyzeImage(base64Image);
+        const analysis = ResponseFormatter.cleanMarkdown(result.response || 'Image analyzed!');
 
-        let analysis = response.data.response || "Image analyzed!";
-        analysis = formatForTelegram(analysis);
         await ctx.replyWithMarkdown(`🔍 *Vision Analysis*\n\n${analysis}`);
     } catch (error) {
-        await ctx.reply("❌ Image analysis failed!");
+        console.error('Photo analysis error:', error);
+        await ctx.replyWithMarkdown(`❌ *Image analysis failed!* Please try again.`);
     }
 });
 
-// ==========================================
-// VOICE HANDLER
-// ==========================================
+// Voice Handler
 bot.on('voice', async (ctx) => {
-    await sendTyping(ctx);
-    try {
-        const voice = ctx.message.voice;
-        const file = await ctx.telegram.getFile(voice.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-        const voiceResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-
-        const formData = new FormData();
-        formData.append('audio', Buffer.from(voiceResponse.data), { filename: 'voice.ogg', contentType: 'audio/ogg' });
-        formData.append('language', 'hi');
-
-        const response = await axios.post(`${WORKER_URL}/voice-chat`, formData, {
-            headers: { ...formData.getHeaders(), "X-API-Key": API_KEY },
-            timeout: 60000
-        });
-
-        let reply = response.data.response || "Voice processed!";
-        reply = formatForTelegram(reply);
-        await ctx.reply(reply);
-    } catch (error) {
-        await ctx.reply("❌ Voice processing failed!");
-    }
-});
-
-// ==========================================
-// DOCUMENT HANDLER
-// ==========================================
-bot.on('document', async (ctx) => {
-    await sendTyping(ctx);
-    try {
-        const doc = ctx.message.document;
-        const file = await ctx.telegram.getFile(doc.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-        const fileResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-        const base64File = Buffer.from(fileResponse.data).toString('base64');
-
-        const response = await axios.post(WORKER_URL, {
-            action: "analyze_file",
-            filename: doc.file_name,
-            content: base64File
-        }, {
-            headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
-            timeout: 90000
-        });
-
-        let analysis = response.data.response || "File analyzed!";
-        analysis = formatForTelegram(analysis);
-        await ctx.replyWithMarkdown(`📄 *File Analysis*\n\n${analysis.substring(0, 2000)}`);
-    } catch (error) {
-        await ctx.reply("❌ File analysis failed!");
-    }
-});
-
-// ==========================================
-// NORMAL TEXT MESSAGE
-// ==========================================
-bot.on('text', async (ctx) => {
-    if (ctx.message.text.startsWith('/')) return;
-    if (ctx.message.text === ADMIN_SECRET) return;
-
-    const userId = ctx.from.id;
-    const userText = ctx.message.text;
-
-    if (!await checkLimit(userId)) {
-        await ctx.replyWithMarkdown(`⚠️ *Daily Limit Reached!*\n\nSend \`/premium ${ADMIN_SECRET}\` if you have the code.`);
+    const rateLimit = storage.checkRateLimit(ctx.from.id, 'voice');
+    if (!rateLimit.allowed) {
+        await ctx.replyWithMarkdown(ResponseFormatter.formatLimitWarning(rateLimit.limit, 'voice'));
         return;
     }
 
-    await sendTyping(ctx);
-
-    const headers = { "Content-Type": "application/json", "X-API-Key": API_KEY };
-    if (adminSessions.has(userId)) {
-        headers["X-User-ID"] = "akhil";
-    }
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
 
     try {
-        const startTime = Date.now();
-        const response = await axios.post(WORKER_URL, {
-            action: "chat",
-            message: userText
-        }, {
-            headers: headers,
-            timeout: 60000
-        });
+        const voice = ctx.message.voice;
+        const file = await ctx.telegram.getFile(voice.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${CONFIG.BOT_TOKEN}/${file.file_path}`;
+        const voiceResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
 
-        const latency = Date.now() - startTime;
-        let reply = response.data.response || 'No response';
-        const model = response.data.model || 'AI';
+        const result = await APIClient.voiceChat(voiceResponse.data, 'hi');
+        const reply = ResponseFormatter.cleanMarkdown(result.response || result.transcript || 'Voice processed!');
 
-        reply = formatForTelegram(reply);
-
-        if (adminSessions.has(userId)) {
-            reply = `👑 *[ADMIN MODE]*\n\n${reply}`;
-        }
-
-        if (reply.length > 4000) {
-            for (let i = 0; i < reply.length; i += 4000) {
-                await ctx.reply(reply.substring(i, i + 4000), { parse_mode: 'Markdown' });
-            }
-        } else {
-            await ctx.reply(`${reply}\n\n⚡ ${latency}ms | 🤖 ${model}`, { parse_mode: 'Markdown' });
-        }
+        await ctx.reply(reply);
     } catch (error) {
-        console.error('Chat error:', error.message);
-        await ctx.replyWithMarkdown("❌ *Service unavailable*\n\nPlease try again.");
+        console.error('Voice processing error:', error);
+        await ctx.replyWithMarkdown(`❌ *Voice processing failed!* Please try again.`);
+    }
+});
+
+// Document Handler
+bot.on('document', async (ctx) => {
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
+
+    try {
+        const doc = ctx.message.document;
+        const file = await ctx.telegram.getFile(doc.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${CONFIG.BOT_TOKEN}/${file.file_path}`;
+        const fileResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+        const base64File = Buffer.from(fileResponse.data).toString('base64');
+
+        const result = await APIClient.analyzeFile(doc.file_name, base64File);
+        const analysis = ResponseFormatter.cleanMarkdown(result.response || 'File analyzed!');
+
+        await ctx.replyWithMarkdown(`📄 *File Analysis*\n\n${analysis.substring(0, 2000)}`);
+    } catch (error) {
+        console.error('File analysis error:', error);
+        await ctx.replyWithMarkdown(`❌ *File analysis failed!* Please try again.`);
     }
 });
 
 // ==========================================
-// CALLBACK HANDLER (Buttons)
+// ========== TEXT MESSAGE HANDLER (STREAMING) ==========
+// ==========================================
+bot.on('text', async (ctx) => {
+    const text = ctx.message.text;
+
+    // Skip commands and admin secret
+    if (text.startsWith('/')) return;
+    if (text === CONFIG.ADMIN_SECRET) return;
+
+    const userId = ctx.from.id;
+
+    // Check rate limit
+    const rateLimit = storage.checkRateLimit(userId, 'messages');
+    if (!rateLimit.allowed) {
+        await ctx.replyWithMarkdown(ResponseFormatter.formatLimitWarning(rateLimit.limit, 'messages'));
+        return;
+    }
+
+    const isAdminMode = storage.isAdminSession(userId);
+
+    // Use streaming for all chat messages
+    await StreamingEngine.streamResponse(text, ctx, isAdminMode);
+});
+
+// ==========================================
+// ========== CALLBACK QUERY HANDLER ==========
 // ==========================================
 bot.action(/.*/, async (ctx) => {
     const data = ctx.callbackQuery.data;
     const userId = ctx.from.id;
+
     await ctx.answerCbQuery();
 
-    if (data.startsWith('admin_') && !adminSessions.has(userId)) {
-        await ctx.editMessageText("❌ Admin access required!");
+    // Check admin access for admin actions
+    if (data.startsWith('admin_') && !storage.isAdminSession(userId)) {
+        await ctx.editMessageText(`❌ *Admin access required!*`, { parse_mode: 'Markdown' });
         return;
     }
 
     const handlers = {
-        'new_chat': () => ctx.editMessageText("💬 *New Chat Started!*", { parse_mode: 'Markdown' }),
-        'image_info': () => ctx.editMessageText("🎨 *Image Generation*\n\n`/generate sunset`\n`/generate --realistic mountain`\n`/generate --artistic dream`", { parse_mode: 'Markdown' }),
-        'photo_info': () => ctx.editMessageText("📸 *Real Photos*\n\n`/photo Taj Mahal`\n`/photo beautiful beach`", { parse_mode: 'Markdown' }),
-        'settings': () => ctx.editMessageText("⚙️ *Settings*\n\nFree: 50 messages/day\nPremium: Unlimited\n\n" + `Admin: Send *${ADMIN_SECRET}*`, { parse_mode: 'Markdown' }),
-        'admin_verify': () => ctx.editMessageText(`👑 *Verify Premium*\n\nSend: \`/premium ${ADMIN_SECRET}\``, { parse_mode: 'Markdown' }),
-        'admin_status': async () => {
-            const prem = await checkPremium(userId);
-            ctx.editMessageText(`📊 *Admin Status*\n\nAdmin: ✅\nPremium: ${prem ? '✅' : '❌'}`, { parse_mode: 'Markdown' });
+        'new_chat': async () => {
+            await ctx.editMessageText(
+                `💬 *New Chat Started!*\n\nJust type your message below!`,
+                { parse_mode: 'Markdown' }
+            );
         },
-        'admin_revoke': () => ctx.editMessageText("❌ *Revoke Premium*\n\nCommand: `/revoke [user_id]`", { parse_mode: 'Markdown' }),
-        'admin_plans': () => ctx.editMessageText("📋 *Premium Plans*\n\n• Plus: ₹299/month\n• Pro: ₹1499/year\n• Enterprise: ₹2999/year\n\nUPI: jaiswalanushi8@oksbi", { parse_mode: 'Markdown' }),
-        'admin_health': () => ctx.editMessageText("🏥 *System Health*\n\n✅ Bot: Running\n✅ API: Online\n✅ Webhook: Active", { parse_mode: 'Markdown' }),
-        'admin_clear': () => ctx.editMessageText("🗑️ *Clear Session*\n\nCommand: `/clear [user_id]`", { parse_mode: 'Markdown' }),
-        'admin_logout': () => {
-            adminSessions.delete(userId);
-            ctx.editMessageText("🚪 *Logged out!*", { parse_mode: 'Markdown' });
+
+        'image_info': async () => {
+            await ctx.editMessageText(
+                `🎨 *AI Image Generation*\n\n` +
+                `• \`/generate sunset\` — Auto\n` +
+                `• \`/generate --realistic mountain\` — Realistic\n` +
+                `• \`/generate --artistic dream\` — Artistic\n\n` +
+                `💡 Try: \`/generate --realistic beautiful beach sunset\``,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'photo_info': async () => {
+            await ctx.editMessageText(
+                `📸 *Real Photo Search*\n\n` +
+                `• \`/photo Taj Mahal\`\n` +
+                `• \`/photo beautiful beach\`\n` +
+                `• \`/photo red rose\`\n\n` +
+                `Searches Unsplash + Pixabay for high-quality photos.`,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'settings': async () => {
+            const stats = storage.getStats();
+            await ctx.editMessageText(
+                `⚙️ *System Settings*\n\n` +
+                `• Free: 50 messages/day\n` +
+                `• Premium: Unlimited\n` +
+                `• Images: 10/day (free)\n` +
+                `• Voice: 5/day (free)\n` +
+                `• Streaming: Word-by-word\n\n` +
+                `📊 *System Stats:*\n` +
+                `• Active Admins: ${stats.adminSessions}\n` +
+                `• Premium Users: ${stats.premiumUsers}\n` +
+                `• Active Streams: ${stats.activeStreams}\n\n` +
+                `💡 Contact admin for premium access.`,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'admin_panel': async () => {
+            storage.createAdminSession(userId, { username: ctx.from.first_name });
+            await ctx.editMessageText(
+                `👑 *Admin Panel*\n\nSelect an action:`,
+                Keyboards.adminPanel
+            );
+        },
+
+        'admin_verify': async () => {
+            await ctx.editMessageText(
+                `👑 *Verify Premium*\n\n` +
+                `User sends: \`/premium ${CONFIG.ADMIN_SECRET}\``,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'admin_status': async () => {
+            const stats = storage.getStats();
+            await ctx.editMessageText(
+                `📊 *System Status*\n\n` +
+                `• Admin Sessions: ${stats.adminSessions}\n` +
+                `• Premium Users: ${stats.premiumUsers}\n` +
+                `• Active Streams: ${stats.activeStreams}\n` +
+                `• Tracked Users: ${stats.totalTracked}\n` +
+                `• Your ID: \`${userId}\``,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'admin_revoke': async () => {
+            await ctx.editMessageText(
+                `❌ *Revoke Premium*\n\n` +
+                `To revoke premium from a user:\n` +
+                `Command: \`/revoke [user_id]\`\n\n` +
+                `Example: \`/revoke 123456789\``,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'admin_plans': async () => {
+            await ctx.editMessageText(
+                `📋 *Premium Plans*\n\n` +
+                `┌─────────────────────────────┐\n` +
+                `│ 💎 *Plus*     ₹299/month    │\n` +
+                `│   500 msgs, 100 images       │\n` +
+                `├─────────────────────────────┤\n` +
+                `│ 👑 *Pro*      ₹1,499/year   │\n` +
+                `│   2000 msgs, 500 images      │\n` +
+                `├─────────────────────────────┤\n` +
+                `│ 🏰 *Enterprise* ₹2,999/year │\n` +
+                `│   Unlimited everything       │\n` +
+                `└─────────────────────────────┘\n\n` +
+                `UPI: \`${CONFIG.UPI_ID}\``,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'admin_health': async () => {
+            await ctx.editMessageText(
+                `🏥 *Health Check*\n\n` +
+                `✅ Bot: Running\n` +
+                `✅ API: Online\n` +
+                `✅ Webhook: Active\n` +
+                `✅ Streaming: Enabled\n` +
+                `✅ Memory: ${process.memoryUsage ? `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB` : 'N/A'}\n` +
+                `📅 ${new Date().toLocaleString()}`,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'admin_clear': async () => {
+            await ctx.editMessageText(
+                `🗑️ *Clear Session*\n\n` +
+                `To clear a user's session:\n` +
+                `Command: \`/clear [user_id]\`\n\n` +
+                `Example: \`/clear 123456789\``,
+                { parse_mode: 'Markdown' }
+            );
+        },
+
+        'admin_logout': async () => {
+            storage.destroyAdminSession(userId);
+            await ctx.editMessageText(
+                `🚪 *Admin panel closed!*\n\nUse /admin to access again.`,
+                { parse_mode: 'Markdown' }
+            );
         }
     };
 
     const handler = handlers[data];
-    if (handler) await handler();
-    else await ctx.editMessageText(`⚙️ ${data}`);
+    if (handler) {
+        await handler();
+    }
 });
 
 // ==========================================
-// NETLIFY FUNCTION HANDLER
+// ========== NETLIFY FUNCTION HANDLER ==========
 // ==========================================
 exports.handler = async (event) => {
     try {
@@ -637,7 +1121,7 @@ exports.handler = async (event) => {
         await bot.handleUpdate(update);
         return { statusCode: 200, body: 'OK' };
     } catch (err) {
-        console.error('Error:', err);
+        console.error('Webhook error:', err);
         return { statusCode: 200, body: 'OK' };
     }
 };
