@@ -14,19 +14,22 @@ const { createClient } = require('@supabase/supabase-js');
 // ==========================================
 // ========== CONFIGURATION ==========
 // ==========================================
+// ==========================================
+// ========== CONFIGURATION (Environment Based) ==========
+// ==========================================
 const CONFIG = {
     BOT_TOKEN: process.env.BOT_TOKEN || "8888091040:AAFFgKqJS8iZJY9R4jYdKmgbgxSY7QTj79I",
     WORKER_URL: "https://nexus-a1.apikeyakhilka.workers.dev/api",
     VOICE_URL: "https://nexus-a1.apikeyakhilka.workers.dev/voice-chat",
     API_KEY: "akhil-123",
-    ADMIN_SECRET: "KaaliNexus@2026",
+    ADMIN_SECRET: process.env.ADMIN_SECRET || "KaaliNexus@2026",
     ADMIN_IDS: new Set([8681361916]),
     APP_NAME: 'NEXUS',
     CREATOR: 'Akhil Jaiswal',
     UPI_ID: 'jaiswalanushi8@oksbi',
     SLACK_WEBHOOK_URL: process.env.SLACK_WEBHOOK_URL || "",
-    const SUPABASE_URL = process.env.SUPABASE_URL || "https://qvgqpgqxwbfgajmrxugo.supabase.co";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_RSRD0E2uCmlsWIXYM8f0zw_KzV2Ffza";
+    SUPABASE_URL: process.env.SUPABASE_URL || "https://qvgqpgqxwbfgajmrxugo.supabase.co",
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || "sb_publishable_RSRD0E2uCmlsWIXYM8f0zw_KzV2Ffza"
 };
 
 // Supabase Client
