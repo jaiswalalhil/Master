@@ -28,8 +28,8 @@ const CONFIG = {
     CREATOR: 'Akhil Jaiswal',
     UPI_ID: 'jaiswalanushi8@oksbi',
     SLACK_WEBHOOK_URL: process.env.SLACK_WEBHOOK_URL || "",
-    SUPABASE_URL: process.env.SUPABASE_URL || "https://qvgqpgqxwbfgajmrxugo.supabase.co",
-    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || "sb_publishable_RSRD0E2uCmlsWIXYM8f0zw_KzV2Ffza"
+    SUPABASE_URL: process.env.SUPABASE_URL || "",
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || ""
 };
 
 // Supabase Client
