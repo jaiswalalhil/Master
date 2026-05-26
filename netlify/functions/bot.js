@@ -270,6 +270,38 @@ bot.command('status', async (ctx) => {
 });
 
 // ==========================================
+// ========== PREMIUM COMMAND ==========
+// ==========================================
+bot.command('premium', async (ctx) => {
+    const args = ctx.message.text.split(' ');
+    const code = args[1];
+    const userId = ctx.from.id;
+    const username = ctx.from.first_name;
+    
+    if (!code) {
+        await ctx.replyWithMarkdown(`❌ *Usage:* \`/premium [code]\``);
+        return;
+    }
+    
+    if (code === CONFIG.ADMIN_SECRET) {
+        const requestId = `REQ_${Date.now()}_${userId}`;
+        global.paymentSessions.set(userId, { requestId, type: 'premium', plan: 'enterprise', amount: 2999 });
+        
+        await ctx.replyWithMarkdown(
+            `💎 *Complete Your Payment*\n\n` +
+            `📋 *Request ID:* \`${requestId}\`\n` +
+            `💰 *Amount:* ₹2999\n` +
+            `🏦 *Payee:* NEXUS PREMIUM\n\n` +
+            `👇 *Click on any UPI app below to pay:*\n\n` +
+            `*After payment, click "I have made the payment"*`,
+            getUPIPaymentButtons(2999, requestId)
+        );
+    } else {
+        await ctx.replyWithMarkdown(`❌ *Invalid premium code!*`);
+    }
+});
+
+// ==========================================
 // ========== AGENT COMMAND ==========
 // ==========================================
 bot.command('agent', async (ctx) => {
